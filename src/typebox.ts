@@ -29,6 +29,7 @@ THE SOFTWARE.
 // --------------------------------------------------------------------------
 // Symbols
 // --------------------------------------------------------------------------
+export const Transform = Symbol.for('TypeBox.Transform')
 export const Modifier = Symbol.for('TypeBox.Modifier')
 export const Hint = Symbol.for('TypeBox.Hint')
 export const Kind = Symbol.for('TypeBox.Kind')
@@ -500,6 +501,7 @@ export type TOmitArray<T extends TSchema[], K extends keyof any> = AssertRest<{ 
 export type TOmitProperties<T extends TProperties, K extends keyof any> = Evaluate<AssertProperties<Omit<T, K>>>
 // prettier-ignore
 export type TOmit<T extends TSchema = TSchema, K extends keyof any = keyof any> = 
+  T extends TTransform<infer S> ? TOmit<S, K> :
   T extends TRecursive<infer S> ? TRecursive<TOmit<S, K>> :
   T extends TIntersect<infer S> ? TIntersect<TOmitArray<S, K>> : 
   T extends TUnion<infer S> ? TUnion<TOmitArray<S, K>> : 
@@ -524,6 +526,7 @@ export type TPartialProperties<T extends TProperties> = Evaluate<AssertPropertie
 }>>
 // prettier-ignore
 export type TPartial<T extends TSchema> =  
+  T extends TTransform<infer S> ? TPartial<S> :
   T extends TRecursive<infer S> ? TRecursive<TPartial<S>> :   
   T extends TIntersect<infer S> ? TIntersect<TPartialArray<S>> : 
   T extends TUnion<infer S>     ? TUnion<TPartialArray<S>> : 
@@ -542,6 +545,7 @@ export type TPickProperties<T extends TProperties, K extends keyof any> =
   }): never
 // prettier-ignore
 export type TPick<T extends TSchema = TSchema, K extends keyof any = keyof any> = 
+  T extends TTransform<infer S> ? TPick<S, K> :
   T extends TRecursive<infer S> ? TRecursive<TPick<S, K>> :
   T extends TIntersect<infer S> ? TIntersect<TPickArray<S, K>> : 
   T extends TUnion<infer S> ? TUnion<TPickArray<S, K>> : 
@@ -617,6 +621,7 @@ export type TRequiredProperties<T extends TProperties> = Evaluate<AssertProperti
 }>>
 // prettier-ignore
 export type TRequired<T extends TSchema> = 
+  T extends TTransform<infer S> ? TRequired<S> :
   T extends TRecursive<infer S> ? TRecursive<TRequired<S>> :   
   T extends TIntersect<infer S> ? TIntersect<TRequiredArray<S>> : 
   T extends TUnion<infer S>     ? TUnion<TRequiredArray<S>> : 
@@ -1355,6 +1360,10 @@ export namespace TypeGuard {
   /** Returns true if this schema has the Optional modifier */
   export function TOptional<T extends TSchema>(schema: T): schema is TOptional<T> {
     return IsObject(schema) && schema[Modifier] === 'Optional'
+  }
+  /** Returns true if this schema has a Transform modifier */
+  export function TTransform(schema: unknown): schema is TTransform {
+    return IsObject(schema) && IsObject(schema[Transform])
   }
   /** Returns true if the given schema is TSchema */
   export function TSchema(schema: unknown): schema is TSchema {
@@ -2445,6 +2454,22 @@ export namespace TemplateLiteralDslParser {
   }
 }
 // --------------------------------------------------------------------------
+// Transform
+// --------------------------------------------------------------------------
+export type TransformFunction<T = any, U = any> = (value: T) => U
+export interface TransformOptions<T extends TSchema = TSchema> {
+  /** Encodes a value to Static<T> */
+  encode?: TransformFunction<any, Static<T>>
+  /** Decodes Static<T> to a value */
+  decode?: TransformFunction<Static<T>, any>
+}
+export type TransformType<T extends TSchema, O extends TransformOptions<any>> = O['decode'] extends TransformFunction ? ReturnType<O['decode']> : Static<T>
+// prettier-ignore
+export interface TTransform<T extends TSchema = TSchema, I = unknown> extends TSchema {
+  static: I
+  [Transform]: Required<TransformOptions<T>>
+}
+// --------------------------------------------------------------------------
 // TypeOrdinal: Used for auto $id generation
 // --------------------------------------------------------------------------
 let TypeOrdinal = 0
@@ -2465,6 +2490,13 @@ export class TypeBuilder {
 // StandardTypeBuilder
 // --------------------------------------------------------------------------
 export class StandardTypeBuilder extends TypeBuilder {
+  // ------------------------------------------------------------------------
+  // Transform
+  // ------------------------------------------------------------------------
+  private DiscardTransform<T extends TSchema>(schema: T): T {
+    const { [Transform as any]: _, ...notransform } = schema
+    return notransform as T
+  }
   // ------------------------------------------------------------------------
   // Modifiers
   // ------------------------------------------------------------------------
@@ -2658,7 +2690,7 @@ export class StandardTypeBuilder extends TypeBuilder {
   public Omit(schema: TSchema, unresolved: any, options: SchemaOptions = {}): any {
     const keys = KeyArrayResolver.Resolve(unresolved)
     // prettier-ignore
-    return ObjectMap.Map(TypeClone.Clone(schema, {}), (schema) => {
+    return this.DiscardTransform(ObjectMap.Map(TypeClone.Clone(schema, {}), (schema) => {
       if (schema.required) {
         schema.required = schema.required.filter((key: string) => !keys.includes(key as any))
         if (schema.required.length === 0) delete schema.required
@@ -2667,7 +2699,7 @@ export class StandardTypeBuilder extends TypeBuilder {
         if (keys.includes(key as any)) delete schema.properties[key]
       }
       return this.Create(schema)
-    }, options)
+    }, options))
   }
   /** `[Standard]` Creates a mapped type where all properties are Optional */
   public Partial<T extends TSchema>(schema: T, options: ObjectOptions = {}): TPartial<T> {
@@ -2681,11 +2713,11 @@ export class StandardTypeBuilder extends TypeBuilder {
       }
     }
     // prettier-ignore
-    return ObjectMap.Map<TPartial<T>>(TypeClone.Clone(schema, {}), (schema) => {
+    return this.DiscardTransform(ObjectMap.Map<TPartial<T>>(TypeClone.Clone(schema, {}), (schema) => {
       delete schema.required
       globalThis.Object.keys(schema.properties).forEach(key => Apply(schema.properties[key]))
       return schema
-    }, options)
+    }, options))
   }
   /** `[Standard]` Creates a mapped type whose keys are picked from the given type */
   public Pick<T extends TSchema, K extends (keyof Static<T>)[]>(schema: T, keys: readonly [...K], options?: SchemaOptions): TPick<T, K[number]>
@@ -2700,7 +2732,7 @@ export class StandardTypeBuilder extends TypeBuilder {
   public Pick(schema: TSchema, unresolved: any, options: SchemaOptions = {}): any {
     const keys = KeyArrayResolver.Resolve(unresolved)
     // prettier-ignore
-    return ObjectMap.Map(TypeClone.Clone(schema, {}), (schema) => {
+    return this.DiscardTransform(ObjectMap.Map(TypeClone.Clone(schema, {}), (schema) => {
       if (schema.required) {
         schema.required = schema.required.filter((key: any) => keys.includes(key))
         if (schema.required.length === 0) delete schema.required
@@ -2709,7 +2741,7 @@ export class StandardTypeBuilder extends TypeBuilder {
         if (!keys.includes(key as any)) delete schema.properties[key]
       }
       return this.Create(schema)
-    }, options)
+    }, options))
   }
   /** `[Standard]` Creates a Record type */
   public Record<K extends TUnion, T extends TSchema>(key: K, schema: T, options?: ObjectOptions): RecordUnionLiteralType<K, T>
@@ -2773,11 +2805,11 @@ export class StandardTypeBuilder extends TypeBuilder {
       }
     }
     // prettier-ignore
-    return ObjectMap.Map<TRequired<T>>(TypeClone.Clone(schema, {}), (schema) => {
+    return this.DiscardTransform(ObjectMap.Map<TRequired<T>>(TypeClone.Clone(schema, {}), (schema) => {
       schema.required = globalThis.Object.keys(schema.properties)
       globalThis.Object.keys(schema.properties).forEach(key => Apply(schema.properties[key]))
       return schema
-    }, options)
+    }, options))
   }
   /** `[Standard]` Returns a schema array which allows types to compose with the JavaScript spread operator */
   public Rest<T extends TSchema>(schema: T): TRest<T> {
@@ -2803,6 +2835,16 @@ export class StandardTypeBuilder extends TypeBuilder {
       ? TemplateLiteralPattern.Create(TemplateLiteralDslParser.Parse(unresolved))
       : TemplateLiteralPattern.Create(unresolved as TTemplateLiteralKind[])
     return this.Create({ ...options, [Kind]: 'TemplateLiteral', type: 'string', pattern })
+  }
+  /** [Standard] Creates a Transform type that supports encoding values. */
+  public Transform<T extends TSchema, O extends TransformOptions<T>>(schema: T, transform: O): TTransform<T, TransformType<T, O>> {
+    const encode = transform.encode || ((value: unknown) => value)
+    const decode = transform.decode || ((value: unknown) => value)
+    if (!TypeGuard.TTransform(schema)) return { ...schema, [Transform]: { encode, decode } } as any
+    const mapped_encode = (value: unknown) => encode(schema[Transform].encode(value))
+    const mapped_decode = (value: unknown) => decode(schema[Transform].decode(value))
+    const codec = { encode: mapped_encode, decode: mapped_decode }
+    return { ...schema, [Transform]: codec } as any
   }
   /** `[Standard]` Creates a Tuple type */
   public Tuple<T extends TSchema[]>(items: [...T], options: SchemaOptions = {}): TTuple<T> {

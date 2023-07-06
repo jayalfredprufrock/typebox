@@ -86,6 +86,7 @@ License MIT
   - [Indexed](#types-indexed)
   - [Not](#types-not)
   - [Rest](#types-rest)
+  - [Transform](#types-transform)
   - [Guards](#types-guards)
   - [Unsafe](#types-unsafe)
   - [Strict](#types-strict)
@@ -96,6 +97,8 @@ License MIT
   - [Convert](#values-convert)
   - [Cast](#values-cast)
   - [Equal](#values-equal)
+  - [Encode](#values-encode)
+  - [Decode](#values-decode)
   - [Hash](#values-hash)
   - [Diff](#values-diff)
   - [Patch](#values-patch)
@@ -1023,6 +1026,36 @@ const T = StringEnum(['A', 'B', 'C'])                // const T = {
 
 type T = Static<typeof T>                            // type T = 'A' | 'B' | 'C'
 ```
+<a name='types-transform'></a>
+
+### Transform Types
+
+TypeBox offers value transform support with `Type.Transform`. This type adds `encode` and `decode` functions to a type which can be used to map json encoded values into JavaScript constructs during a validation phase. Transform types do not change the validation behavior of a type, but do change the inferenced static type to match a decoded value. These types can be useful when working with dates objects and `base64` encoded strings.
+
+Transform types are designed to work in tandem with the `Value.Encode` and `Value.Decode` functions. The following example shows encoding and decoding of `base64` to `Buffer` and back again.
+
+```typescript 
+type T = Static<typeof Base64>                    // type T = Buffer
+                                                  //          |
+                                                  //   inferred from decode() return type        
+
+const T = Type.Transform(Type.String(), {         // const T = { 
+  decode: value => Buffer.from(value, 'base64'),  //   type: 'string'
+  encode: value => value.toString('base64')       //   [Symbol(TypeBox.Kind)]: 'String',
+})                                                //   [Symbol(TypeBox.Encoded)]: {
+                                                  //     decode: [Function],
+                                                  //     encode: [Function]
+                                                  //   }
+                                                  // }
+
+const message = 'aGVsbG8gd29ybGQ='                // const message = <b64>'hello world'
+
+const decoded = Value.Decode(T, message)          // const decoded = <Buffer 61 47 56 73 62 47 ...>
+
+const encoded = Value.Encode(T, message)          // const encoded = 'aGVsbG8gd29ybGQ='
+```
+
+
 
 <a name='types-guards'></a>
 
@@ -1155,6 +1188,46 @@ const R = Value.Equal(                               // const R = true
   { x: 1, y: 2, z: 3 },
   { x: 1, y: 2, z: 3 }
 )
+```
+
+<a name='values-encode'></a>
+
+### Encode
+
+Use the Encode function encode a transformed type. It is advised to check this functions return value to ensure the transform produced the intended value.
+
+```typescript
+const T = Type.Transform(Type.Number(), {           // const T = { 
+  encode: (value: number) => value + 1,             //   type: 'number',
+})                                                  //   [TypeBox.Kind]: 'Number',
+                                                    //   [Symbol(TypeBox.Transform)]: {
+                                                    //     encode: [Function]
+                                                    //   }
+                                                    // }
+
+const A = 1                                         // const A = 1
+
+const B = Value.Encode(T, value)                    // const B = 2
+```
+
+<a name='values-decode'></a>
+
+### Decode
+
+Use the Decode function decode a transformed type. It is advised to check the value being decoded before calling this function to ensure the transform receives the intended value.
+
+```typescript
+const T = Type.Transform(Type.Number(), {           // const T = { 
+  decode: (value: number) => value + 1,             //   type: 'number',
+})                                                  //   [TypeBox.Kind]: 'Number',
+                                                    //   [Symbol(TypeBox.Transform)]: {
+                                                    //     decode: [Function]
+                                                    //   }
+                                                    // }
+
+const A = 1                                         // const A = 1
+
+const B = Value.Decode(T, value)                    // const B = 2
 ```
 
 <a name='values-hash'></a>

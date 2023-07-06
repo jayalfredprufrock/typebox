@@ -37,6 +37,7 @@ import { ValueConvert } from './convert'
 import { ValueCreate } from './create'
 import { ValueCheck } from './check'
 import { ValueDelta, Edit } from './delta'
+import { ValueTransform } from './transform'
 
 /** Provides functions to perform structural updates to JavaScript values */
 export namespace Value {
@@ -103,5 +104,21 @@ export namespace Value {
   /** Performs a deep mutable value assignment while retaining internal references. */
   export function Mutate(current: Mutable, next: Mutable): void {
     ValueMutate.Mutate(current, next)
+  }
+  /** Runs any transform functions assigned to each type and remaps the value. This function should only be run on successful validation of the type. */
+  export function Decode<T extends Types.TSchema, R extends Types.TSchema[]>(schema: T, references: [...R], value: unknown): Types.Static<T>
+  /** Runs any transform functions assigned to each type and remaps the value. This function should only be run on successful validation of the type. */
+  export function Decode<T extends Types.TSchema>(schema: T, value: unknown): Types.Static<T>
+  export function Decode<T extends Types.TSchema>(...args: any[]): Types.Static<T> {
+    const [schema, references, value] = args.length === 3 ? [args[0], args[1], args[2]] : [args[0], [], args[1]]
+    return ValueTransform.Decode(schema, references, value)
+  }
+  /** Runs any transform functions assigned to each type and remaps the value. This function should only be run on successful validation of the type. */
+  export function Encode<T extends Types.TSchema, R extends Types.TSchema[]>(schema: T, references: [...R], value: Types.Static<T>): Types.Static<T>
+  /** Runs any transform functions assigned to each type and remaps the value. This function should only be run on successful validation of the type. */
+  export function Encode<T extends Types.TSchema>(schema: T, value: Types.Static<T>): Types.Static<T>
+  export function Encode<T extends Types.TSchema>(...args: any[]): Types.Static<T> {
+    const [schema, references, value] = args.length === 3 ? [args[0], args[1], args[2]] : [args[0], [], args[1]]
+    return ValueTransform.Encode(schema, references, value)
   }
 }

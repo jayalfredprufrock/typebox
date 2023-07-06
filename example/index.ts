@@ -1,40 +1,13 @@
-import { TypeSystem } from '@sinclair/typebox/system'
-import { TypeCompiler } from '@sinclair/typebox/compiler'
-import { Value, ValuePointer } from '@sinclair/typebox/value'
-import { Type, TypeGuard, Kind, Static, TSchema } from '@sinclair/typebox'
+import { Value } from '@sinclair/typebox/value'
+import { Type, TSchema, Static, Transform, Assert, Evaluate } from '@sinclair/typebox'
 
-// -----------------------------------------------------------
-// Create: Type
-// -----------------------------------------------------------
-
-const T = Type.Object({
-  x: Type.Number(),
-  y: Type.Number(),
-  z: Type.Number(),
+const JsonString = Type.Transform(Type.String(), {
+  decode: (value) => JSON.parse(value),
+  encode: (value) => JSON.stringify(value),
 })
 
-type T = Static<typeof T>
+const decoded = Value.Decode(JsonString, '[1, 2, 3, 4]')
+const encoded = Value.Encode(JsonString, decoded)
 
-console.log(T)
-
-// -----------------------------------------------------------
-// Create: Value
-// -----------------------------------------------------------
-
-const V = Value.Create(T)
-
-console.log(V)
-
-// -----------------------------------------------------------
-// Compile: Type
-// -----------------------------------------------------------
-
-const C = TypeCompiler.Compile(T)
-
-console.log(C.Code())
-
-// -----------------------------------------------------------
-// Check: Value
-// -----------------------------------------------------------
-
-console.log(C.Check(V))
+console.log(decoded)
+console.log(encoded)
